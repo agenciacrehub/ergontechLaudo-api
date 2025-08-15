@@ -1,0 +1,359 @@
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ------------------------ ENUMS ------------------------
+
+enum role_type {
+  MASTER
+  ADMIN
+  CLIENT
+  USER
+}
+
+enum document_type {
+  CPF
+  CNPJ
+  RG
+  PASSPORT
+  OTHER
+}
+
+enum gender {
+  MALE
+  FEMALE
+  OTHER
+  NOT_INFORMED
+}
+
+enum address_type {
+  RESIDENTIAL
+  COMMERCIAL
+  BILLING
+  DELIVERY
+  OTHER
+}
+
+enum phone_type {
+  MOBILE
+  LANDLINE
+  WHATSAPP
+  COMMERCIAL
+  OTHER
+}
+
+enum type_laudos {
+  PSICOSSOCIAL
+  PERICULOSIDADE
+  ERGONOMIC
+}
+
+
+// ------------------------ USER MODELS ------------------------
+
+model user {
+  id                       String               @id @default(uuid())
+  name                     String               @default("User")
+  email                    String               @unique
+  password                 String
+  is_active                Boolean              @default(true)
+  role                     role_type            @default(USER)
+  created_at               DateTime             @default(now())
+  updated_at               DateTime             @updatedAt
+  
+  // Relacionamentos
+  profiles                 profile[]
+  permissions              user_permission[]
+  audit_logs               audit_log[]           // Relação inversa para audit_log
+  login_logs               login_log[]           // Relação inversa para login_log
+  laudos                   laudo[]               // Laudos sob responsabilidade do usuário
+}
+
+model profile_photo {
+  id         String   @id @default(uuid())
+  profile_id String   @unique
+  photo_user String
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+  profile    profile  @relation(fields: [profile_id], references: [id], onDelete: Cascade)
+}
+
+model profile {
+  id              String            @id @default(uuid())
+  created_at      DateTime          @default(now())
+  updated_at      DateTime          @updatedAt
+  user_id         String            @unique
+  birth_date      DateTime?
+  company_id      String
+  company         company           @relation(fields: [company_id], references: [id], onDelete: Cascade)
+  function_id     String
+  job_function    job_function      @relation(fields: [function_id], references: [id])
+  gender          gender?
+  user            user              @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  profile_address profile_address[]
+  profile_email   profile_email[]
+  profile_phone   profile_phone[]
+  profile_photo   profile_photo?
+}
+
+model profile_address {
+  id         String       @id @default(uuid())
+  profile_id String
+  type       address_type
+  street     String
+  number     String
+  complement String?
+  district   String
+  city       String
+  state      String
+  zip_code   String
+  country    String
+  is_primary Boolean @default(false)
+  profile    profile      @relation(fields: [profile_id], references: [id], onDelete: Cascade)
+}
+
+model profile_email {
+  id         String   @id @default(uuid())
+  profile_id String
+  email      String
+  is_primary Boolean  @default(false)
+  created_at DateTime @default(now())
+  profile    profile  @relation(fields: [profile_id], references: [id], onDelete: Cascade)
+}
+
+model profile_phone {
+  id         String     @id @default(uuid())
+  profile_id String
+  type       phone_type
+  number     String
+  is_primary Boolean    @default(false)
+  created_at DateTime   @default(now())
+  profile    profile    @relation(fields: [profile_id], references: [id], onDelete: Cascade)
+}
+
+// ------------------------ MODELS ------------------------
+
+model company {
+  id                                 String   @id @default(uuid())
+  name                               String
+  legal_name                         String
+  cnpj                               String
+  cnae                               String?
+  street                             String
+  number                             String
+  zip_code                           String
+  neighborhood                       String
+  city                               String
+  state                              String
+  active                             Boolean  @default(true)
+  created_at                         DateTime @default(now())
+  updated_at                         DateTime @updatedAt
+  
+  // Relacionamentos
+  profiles                           profile[]     // Perfis da empresa
+  laudos                             laudo[]       // Laudos da empresa
+  audit_logs                         audit_log[]   // Logs de auditoria
+  login_logs                         login_log[]   // Logs de login
+}
+
+model departament {
+  id                                 String   @id @default(uuid())
+  name                               String
+  active                             Boolean  @default(true)
+  setor_id                           String
+  created_at                         DateTime @default(now())
+  updated_at                         DateTime @updatedAt
+  
+  // Relacionamentos
+  setor                              setor @relation(fields: [setor_id], references: [id])
+  job_functions                      job_function[] // Funções do departamento
+}
+
+model setor {
+  id                                 String   @id @default(uuid())
+  name                               String
+  active                             Boolean  @default(true)
+  created_at                         DateTime @default(now())
+  updated_at                         DateTime @updatedAt
+  
+  // Relacionamentos
+  departaments                       departament[] // Departamentos do setor
+}
+
+model laudo {
+  id           String       @id @default(uuid())
+  name         String
+  company_id   String
+  user_id      String
+  type_laudos  type_laudos
+  status       String       @default("Ativo")
+  created_at   DateTime     @default(now())
+  updated_at   DateTime     @updatedAt
+  
+  // Relacionamentos
+  company      company      @relation(fields: [company_id], references: [id], onDelete: Cascade)
+  user         user         @relation(fields: [user_id], references: [id])
+  formularios  formularios[] // Formulários vinculados ao laudo
+  form_tokens  form_tokens[] // Tokens para acesso ao formulário
+  report_ups   report_up[]   // Relatórios AEP vinculados ao laudo
+  
+  @@index([company_id])
+  @@index([user_id])
+  @@index([status])
+}
+
+model form_tokens {
+  id         String   @id @default(uuid())
+  token      String   @unique // Token único para acessar o formulário
+  laudo_id   String   // ID do laudo vinculado
+  expires_at DateTime // Data de expiração do token
+  used       Boolean  @default(false) // Se o token já foi usado
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+  
+  // Relacionamentos
+  laudo      laudo    @relation(fields: [laudo_id], references: [id], onDelete: Cascade)
+  
+  @@index([token])
+  @@index([laudo_id])
+  @@index([expires_at])
+}
+
+model formularios {
+  id         String   @id @default(uuid())
+  laudo_id   String
+  respostas  Json     // JSON com todas as respostas do formulário
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+  
+  // Relacionamentos
+  laudo      laudo    @relation(fields: [laudo_id], references: [id], onDelete: Cascade)
+  
+  @@index([laudo_id])
+}
+
+model report_up {
+  id         String   @id @default(uuid())
+  laudo_id   String   // ID do laudo relacionado
+  conteudo   Json     // JSON com todo o conteúdo do formulário de AEP
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+  
+  // Relacionamentos
+  laudo      laudo    @relation(fields: [laudo_id], references: [id], onDelete: Cascade)
+  images     report_up_image[] // Imagens do AEP
+  
+  @@index([laudo_id])
+}
+
+model report_up_image {
+  id           String   @id @default(uuid())
+  report_up_id String   // ID do report_up relacionado
+  image_name   String   // Nome/descrição da imagem (ex: "logo_empresa", "foto_posto_trabalho")
+  image_data   String   // Imagem em base64
+  image_type   String   // Tipo da imagem (ex: "image/jpeg", "image/png")
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+  
+  // Relacionamentos
+  report_up    report_up @relation(fields: [report_up_id], references: [id], onDelete: Cascade)
+  
+  @@index([report_up_id])
+  @@index([image_name])
+}
+
+model job_function {
+  id                                 String   @id @default(uuid())
+  name                               String
+  active                             Boolean  @default(true)
+  departament_id                     String
+  created_at                         DateTime @default(now())
+  updated_at                         DateTime @updatedAt
+  
+  // Relacionamentos
+  departament                        departament @relation(fields: [departament_id], references: [id])
+  profiles                           profile[]   // Perfis com esta função
+}
+
+// ------------------------ RBAC MODELS ------------------------
+
+model permission {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+}
+
+model role_permission {
+  id          String    @id @default(uuid())
+  role        role_type @unique // Enum, um registro por role
+  permissions Json // Array de permissões, ex: ["view_dashboard", "edit_user"]
+  created_at  DateTime  @default(now())
+  updated_at  DateTime  @updatedAt
+}
+
+model user_permission {
+  id          String   @id @default(uuid())
+  user_id     String   @unique // Um registro por usuário
+  user        user     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  permissions Json     // Array de permissões específicas do usuário, ex: ["view_dashboard", "edit_user"]
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+}
+
+
+// ------------------------ AUDIT LOG ------------------------
+
+model audit_log {
+  id          String    @id @default(uuid())
+  user_id     String?   // pode ser nulo para ações automáticas
+  company_id  String?   // escopo da ação
+  action      String    // ex: "CREATE_PURCHASE_REQUEST"
+  entity      String    // ex: "purchase_request"
+  entity_id   String?   // ID da entidade alterada
+  description String?   // descrição adicional
+  metadata    Json?     // payload extra
+  ip_address  String?
+  user_agent  String?
+  created_at  DateTime  @default(now())
+  user        user?     @relation(fields: [user_id], references: [id])
+  company     company?  @relation(fields: [company_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+  @@index([company_id])
+  @@index([entity, entity_id])
+}
+
+model system_log {
+  id          String    @id @default(uuid())
+  level       String    // INFO, WARN, ERROR
+  scope       String    // Módulo/contexto
+  message     String
+  details     Json?
+  created_at  DateTime  @default(now())
+
+  @@index([level])
+  @@index([scope])
+}
+
+model login_log {
+  id          String    @id @default(uuid())
+  user_id     String
+  company_id  String?
+  ip_address  String?
+  user_agent  String?
+  status      String
+  created_at  DateTime  @default(now())
+  user        user      @relation(fields: [user_id], references: [id])
+  company     company?  @relation(fields: [company_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+  @@index([status])
+}
